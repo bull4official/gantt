@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Диаграмма Ганта — контрагенты</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{
+    --bg:#0F1115; --card:#171A21; --border:rgba(255,255,255,.08);
+    --accent:#4F9CFF; --text:#E6E9EF; --muted:#8B93A1;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px;overflow:hidden}
+  input,select,textarea,button{font-family:inherit}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px}
+  .btn{padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,.04);cursor:pointer;transition:.15s;white-space:nowrap}
+  .btn:hover{background:rgba(255,255,255,.1)}
+  .btn-primary{background:var(--accent);border-color:var(--accent);color:#0B1220;font-weight:600}
+  .btn-primary:hover{filter:brightness(1.1)}
+  .btn-danger{background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.35);color:#F87171}
+  .btn-danger:hover{background:rgba(239,68,68,.3)}
+  .input{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);width:100%;outline:none}
+  .input:focus{border-color:var(--accent)}
+  .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;display:block}
+  .tl-wrap{position:relative;overflow:auto}
+  .tl-head{position:sticky;top:0;z-index:20;background:var(--card);border-bottom:1px solid var(--border)}
+  .tl-month{display:flex;flex-direction:column;border-right:1px solid var(--border)}
+  .tl-month .m-label{padding:6px 10px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap}
+  .tl-month .d-labels{display:flex;height:22px}
+  .tl-day{flex:1;font-size:9px;color:var(--muted);text-align:center;border-right:1px solid rgba(255,255,255,.04);line-height:22px}
+  .tl-day.weekend{background:rgba(255,255,255,.03)}
+  .tl-row{position:relative;border-bottom:1px solid var(--border);height:48px}
+  .tl-row.contractor-row{background:rgba(255,255,255,.02)}
+  .tl-grid-line{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.05);pointer-events:none}
+  .tl-grid-line.month{background:rgba(255,255,255,.12)}
+  .today-line{position:absolute;top:0;bottom:0;width:2px;background:#EF4444;z-index:15;pointer-events:none}
+  .today-line::after{content:'сегодня';position:absolute;top:-20px;left:-22px;font-size:9px;color:#EF4444;background:var(--card);padding:1px 4px;border-radius:4px}
+  .bar{position:absolute;top:12px;height:24px;border-radius:6px;cursor:grab;overflow:visible;display:flex;align-items:center;
+       box-shadow:0 2px 8px rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.15);z-index:10;user-select:none}
+  .bar:active{cursor:grabbing}
+  .bar .bar-fill{position:absolute;inset:0;border-radius:6px;opacity:.45}
+  .bar .bar-label{position:relative;z-index:2;padding:0 8px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-weight:500;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+  .bar .resize-r{position:absolute;right:-4px;top:0;width:8px;height:100%;cursor:ew-resize;border-radius:0 6px 6px 0;z-index:3}
+  .bar .resize-l{position:absolute;left:-4px;top:0;width:8px;height:100%;cursor:ew-resize;border-radius:6px 0 0 6px;z-index:3}
+  .bar .resize-r::after,.bar .resize-l::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:12px;background:rgba(255,255,255,.6);border-radius:2px}
+  .c-item{border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;background:rgba(255,255,255,.03);transition:.15s}
+  .c-item:hover{background:rgba(255,255,255,.06)}
+  .t-item{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;font-size:12px;cursor:pointer}
+  .t-item:hover{background:rgba(255,255,255,.06)}
+  .dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+  .modal-back{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+  .modal{width:100%;max-width:460px;max-height:90vh;overflow-y:auto}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .modal{animation:fadeIn .18s ease}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:4px}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.25)}
+  .empty{color:var(--muted);text-align:center;padding:48px 20px;font-size:15px}
+  .sync-indicator{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .sync-online{background:#34D399}
+  .sync-offline{background:#EF4444}
+  .sync-syncing{background:#F59E0B;animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+</style>
+</head>
+<body>
+<div class="flex flex-col h-screen">
+  <header class="flex items-center gap-3 px-5 py-3 border-b" style="border-color:var(--border);background:var(--card)">
+    <div class="flex items-center gap-2">
+      <div style="width:28px;height:28px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0B1220" stroke-width="2.5" stroke-linecap="round"><path d="M3 6h18M3 12h12M3 18h7"/></svg>
+      </div>
+      <input id="projectName" class="input" style="width:220px;font-weight:600;font-size:15px" placeholder="Название проекта">
+    </div>
+    <div class="flex items-center gap-2 ml-2">
+      <label class="label" style="margin:0">Старт</label>
+      <input type="date" id="projectStart" class="input" style="width:140px">
+      <label class="label" style="margin:0">Финиш</label>
+      <input type="date" id="projectFinish" class="input" style="width:140px">
+    </div>
+    <div class="flex items-center gap-2 ml-auto">
+      <div class="flex items-center gap-2" title="Синхронизация с Supabase">
+        <div class="sync-indicator sync-offline" id="syncDot"></div>
+        <span id="syncLabel" style="font-size:11px;color:var(--muted)">Офлайн</span>
+      </div>
+      <div style="width:1px;height:24px;background:var(--border);margin:0 4px"></div>
+      <button class="btn" id="btnExportJson">💾 JSON</button>
+      <button class="btn" id="btnExportCsv">📄 CSV</button>
+      <button class="btn btn-danger" id="btnReset">🗑 Сброс</button>
+      <button class="btn btn-primary" id="addContractor">+ Контрагент</button>
+    </div>
+  </header>
+  <div class="flex flex-1 overflow-hidden">
+    <aside id="sidebar" class="flex flex-col" style="width:320px;min-width:320px;border-right:1px solid var(--border);background:var(--card)">
+      <div class="p-3 border-b flex items-center gap-2" style="border-color:var(--border)">
+        <span style="font-weight:600">Контрагенты</span>
+        <span id="cCount" style="color:var(--muted);font-size:12px"></span>
+        <button class="btn" style="margin-left:auto;padding:4px 10px;font-size:12px" id="addContractor2">+ Добавить</button>
+      </div>
+      <div id="contractorList" class="flex-1 overflow-y-auto p-3"></div>
+    </aside>
+    <main class="flex-1 flex flex-col overflow-hidden">
+      <div class="tl-wrap flex-1" id="timelineWrap">
+        <div id="timeline"></div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+/* ============================================================
+   SUPABASE CONFIG — ВСТАВЬ СВОИ КЛЮЧИ
+   ============================================================ */
+const SUPABASE_URL = 'https://yvsdgoiudliukdugiomv.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2c2Rnb2l1ZGxpdWtkdWdpb212Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM2MDcxMDMsImV4cCI6MjEwOTE4MzEwM30.1QfNut__6Lh4giXj4bHyBz7jOd8uhK1B4coHDcW3gck';
+
+/* ============================================================
+   INIT SUPABASE
+   ============================================================ */
+const supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let isOnline = false;
+let isApplyingRemote = false;
+let saveTimeout = null;
+
+function setSyncStatus(status, label){
+  const dot = document.getElementById('syncDot');
+  const lbl = document.getElementById('syncLabel');
+  dot.className = 'sync-indicator';
+  if(status==='online'){dot.classList.add('sync-online');lbl.textContent='Онлайн';}
+  else if(status==='syncing'){dot.classList.add('sync-syncing');lbl.textContent='Синхронизация…';}
+  else{dot.classList.add('sync-offline');lbl.textContent='Офлайн';}
+}
+
+async function initSupabase(){
+  setSyncStatus('syncing');
+  try{
+    const {data, error} = await supa.from('gantt_data').select('payload').eq('id','main').single();
+    if(error) throw error;
+    data_ = data.payload;
+    isOnline = true;
+    setSyncStatus('online');
+    render();
+    // Подписка на изменения в реальном времени
+    supa.channel('gantt_changes')
+      .on('postgres_changes',
+        {event:'UPDATE', schema:'public', table:'gantt_data', filter:'id=eq.main'},
+        (payload)=>{
+          if(isApplyingRemote) return;
+          isApplyingRemote = true;
+          data_ = payload.new.payload;
+          render();
+          setTimeout(()=>{isApplyingRemote=false;},500);
+        }
+      )
+      .subscribe();
+  }catch(err){
+    console.warn('Supabase недоступен, работаем локально:', err.message);
+    isOnline = false;
+    setSyncStatus('offline');
+    render();
+  }
+}
+
+function scheduleSave(){
+  if(isApplyingRemote) return;
+  save();
+  if(!isOnline) return;
+  clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(async ()=>{
+    setSyncStatus('syncing');
+    const {error} = await supa.from('gantt_data').update({payload: data_, updated_at: new Date().toISOString()}).eq('id','main');
+    if(error){ console.warn('Save error:', error); setSyncStatus('offline'); }
+    else setSyncStatus('online');
+  }, 400);
+}
+
+/* ============================================================
+   LOCAL STORAGE + STATE
+   ============================================================ */
+const STORAGE_KEY = 'gantt_data_v1';
+const DEFAULT_COLORS = ['#4F9CFF','#34D399','#F59E0B','#EF4444','#A78BFA','#EC4899','#06B6D4','#F97316'];
+function uid(){ return 'id_'+Math.random().toString(36).slice(2,11)+Date.now().toString(36); }
+
+function defaultData(){
+  return {
+    project:{name:'Проект',start:'2025-01-07',finish:'2025-04-18'},
+    contractors:[
+      {id:'id_mondeliz_001',name:'Монделиз',inn:'',contact:'',color:'#4F9CFF',
+       tasks:[{id:'id_mondeliz_task_001',title:'Период проекта',start:'2025-01-07',finish:'2025-02-15',progress:0}]},
+      {id:'id_chernogolovka_001',name:'Черноголовка',inn:'',contact:'',color:'#34D399',
+       tasks:[{id:'id_chernogolovka_task_001',title:'Период проекта',start:'2025-03-03',finish:'2025-04-18',progress:0}]}
+    ]
+  };
+}
+
+let data_ = (function(){
+  try{ const r = localStorage.getItem(STORAGE_KEY); if(r) return JSON.parse(r); }catch(e){}
+  return defaultData();
+})();
+
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data_)); }
+
+/* ============================================================
+   DATE HELPERS
+   ============================================================ */
+const DAY = 86400000;
+function parseD(s){ const[y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
+function fmtD(d){ return d.toISOString().slice(0,10); }
+function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+function daysBetween(a,b){ return Math.round((b-a)/DAY); }
+function daysInMonth(y,m){ return new Date(y,m+1,0).getDate(); }
+
+const $ = s => document.querySelector(s);
+const timelineEl = document.getElementById('timeline');
+const sidebarEl = document.getElementById('contractorList');
+
+function render(){
+  save();
+  $('#projectName').value = data_.project.name;
+  $('#projectStart').value = data_.project.start;
+  $('#projectFinish').value = data_.project.finish;
+  $('#cCount').textContent = data_.contractors.length ? `(${data_.contractors.length})` : '';
+  renderSidebar();
+  renderTimeline();
+}
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+function renderSidebar(){
+  if(!data_.contractors.length){ sidebarEl.innerHTML='<div class="empty">Нет контрагентов.<br>Нажмите «+ Добавить».</div>'; return; }
+  sidebarEl.innerHTML = data_.contractors.map(c=>`
+    <div class="c-item">
+      <div class="flex items-center gap-2">
+        <div class="dot" style="background:${c.color}"></div>
+        <div class="flex-1" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</div>
+        <button class="btn" style="padding:3px 8px;font-size:11px" onclick="openContractorModal('${c.id}')">✏️</button>
+        <button class="btn btn-danger" style="padding:3px 8px;font-size:11px" onclick="removeContractor('${c.id}')">✕</button>
+      </div>
+      ${c.inn?`<div style="font-size:11px;color:var(--muted);margin-top:4px">ИНН: ${esc(c.inn)}</div>`:''}
+      ${c.contact?`<div style="font-size:11px;color:var(--muted)">Контакт: ${esc(c.contact)}</div>`:''}
+      <div class="mt-2 flex items-center gap-2">
+        <span style="font-size:11px;color:var(--muted)">Периоды (${c.tasks.length})</span>
+        <button class="btn" style="margin-left:auto;padding:2px 8px;font-size:11px" onclick="openTaskModal(null,'${c.id}')">+ Период</button>
+      </div>
+      ${c.tasks.map(t=>`<div class="t-item" onclick="openTaskModal('${t.id}','${c.id}')">
+        <div class="dot" style="background:${c.color};opacity:.7"></div>
+        <div class="flex-1" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.title)}</div>
+        <div style="font-size:10px;color:var(--muted);white-space:nowrap">${t.start.slice(5)} → ${t.finish.slice(5)}</div>
+      </div>`).join('')}
+    </div>
+  `).join('');
+}
+
+/* ============================================================
+   TIMELINE
+   ============================================================ */
+function renderTimeline(){
+  const pStart = parseD(data_.project.start);
+  const pFinish = parseD(data_.project.finish);
+  const totalDays = Math.max(1, daysBetween(pStart,pFinish)+1);
+  const dayW = 22;
+
+  // Header
+  let headHTML = '<div class="tl-head"><div style="display:flex">';
+  let cur = new Date(pStart); cur.setDate(1);
+  while(cur <= pFinish){
+    const y=cur.getFullYear(), m=cur.getMonth(), mD=daysInMonth(y,m);
+    const firstDay = (y===pStart.getFullYear()&&m===pStart.getMonth()) ? pStart.getDate() : 1;
+    const lastDay = (y===pFinish.getFullYear()&&m===pFinish.getMonth()) ? pFinish.getDate() : mD;
+    const span = lastDay - firstDay + 1;
+    const mn = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+    let dh='';
+    for(let d=firstDay; d<=lastDay; d++){
+      const dt=new Date(y,m,d), we=dt.getDay()===0||dt.getDay()===6;
+      dh += `<div class="tl-day ${we?'weekend':''}" style="width:${dayW}px">${d}</div>`;
+    }
+    headHTML += `<div class="tl-month" style="width:${span*dayW}px;flex-shrink:0"><div class="m-label">${mn[m]} ${y}</div><div class="d-labels">${dh}</div></div>`;
+    cur.setMonth(cur.getMonth()+1); cur.setDate(1);
+  }
+  headHTML += '</div></div>';
+
+  const totalW = totalDays * dayW;
+  let bodyHTML = `<div style="position:relative;width:${totalW}px">`;
+
+  // Grid lines
+  let gc = new Date(pStart); gc.setDate(1);
+  if(gc < pStart) gc.setMonth(gc.getMonth()+1);
+  while(gc <= pFinish){
+    bodyHTML += `<div class="tl-grid-line month" style="left:${daysBetween(pStart,gc)*dayW}px"></div>`;
+    gc.setMonth(gc.getMonth()+1); gc.setDate(1);
+  }
+
+  if(!data_.contractors.length) bodyHTML += `<div class="empty" style="width:${totalW}px">Добавьте контрагентов</div>`;
+
+  data_.contractors.forEach(c=>{
+    bodyHTML += `<div class="tl-row contractor-row" style="width:${totalW}px">
+      <div style="position:absolute;left:10px;top:0;height:100%;display:flex;align-items:center;gap:8px;z-index:5">
+        <div class="dot" style="background:${c.color}"></div>
+        <span style="font-weight:600;font-size:12px">${esc(c.name)}</span>
+        <button class="btn" style="padding:2px 8px;font-size:10px;margin-left:8px" onclick="openTaskModal(null,'${c.id}')">+ Период</button>
+      </div>
+    </div>`;
+    if(!c.tasks.length) bodyHTML += `<div class="tl-row" style="width:${totalW}px"><div style="position:absolute;left:40px;top:0;height:100%;display:flex;align-items:center;color:var(--muted);font-size:12px">Нет периодов</div></div>`;
+    c.tasks.forEach(t=>{
+      const s=parseD(t.start), f=parseD(t.finish);
+      const off=Math.max(0,daysBetween(pStart,s)), dur=Math.max(1,daysBetween(s,f)+1);
+      bodyHTML += `<div class="tl-row" style="width:${totalW}px">
+        <div class="bar" style="left:${off*dayW}px;width:${dur*dayW}px;background:${c.color}" data-task="${t.id}" data-cid="${c.id}">
+          <div class="bar-fill" style="width:${t.progress||0}%;background:#fff"></div>
+          <div class="bar-label">${esc(t.title)}${t.progress?` · ${t.progress}%`:''}</div>
+          <div class="resize-l" data-task="${t.id}" data-cid="${c.id}"></div>
+          <div class="resize-r" data-task="${t.id}" data-cid="${c.id}"></div>
+        </div>
+      </div>`;
+    });
+  });
+
+  // Today line
+  const today=new Date(); today.setHours(0,0,0,0);
+  if(today>=pStart && today<=pFinish)
+    bodyHTML += `<div class="today-line" style="left:${daysBetween(pStart,today)*dayW}px"></div>`;
+
+  bodyHTML += '</div>';
+  timelineEl.innerHTML = headHTML + bodyHTML;
+  initDragResize();
+}
+
+/* ============================================================
+   DRAG & RESIZE
+   ============================================================ */
+function initDragResize(){
+  const dayW = 22;
+
+  timelineEl.querySelectorAll('.bar').forEach(bar=>{
+    bar.addEventListener('mousedown', e=>{
+      if(e.target.classList.contains('resize-r')||e.target.classList.contains('resize-l')) return;
+      e.preventDefault();
+      const task = data_.contractors.find(c=>c.id===bar.dataset.cid)?.tasks.find(t=>t.id===bar.dataset.task);
+      if(!task) return;
+      const startX = e.clientX, origS=task.start, origF=task.finish;
+      const onMove = ev=>{
+        const shift = Math.round((ev.clientX-startX)/dayW);
+        if(!shift) return;
+        task.start = fmtD(addDays(parseD(origS),shift));
+        task.finish = fmtD(addDays(parseD(origF),shift));
+        renderTimeline();
+      };
+      const onUp = ()=>{ document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); scheduleSave(); };
+      document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
+    });
+    bar.addEventListener('dblclick', ()=>openTaskModal(bar.dataset.task,bar.dataset.cid));
+  });
+
+  timelineEl.querySelectorAll('.resize-r').forEach(h=>{
+    h.addEventListener('mousedown', e=>{
+      e.preventDefault(); e.stopPropagation();
+      const task = data_.contractors.find(c=>c.id===h.dataset.cid)?.tasks.find(t=>t.id===h.dataset.task);
+      if(!task) return;
+      const startX=e.clientX, origF=task.finish;
+      const onMove = ev=>{
+        const nf = addDays(parseD(origF),Math.round((ev.clientX-startX)/dayW));
+        if(nf>=parseD(task.start)){ task.finish=fmtD(nf); renderTimeline(); }
+      };
+      const onUp = ()=>{ document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); scheduleSave(); };
+      document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
+    });
+  });
+
+  timelineEl.querySelectorAll('.resize-l').forEach(h=>{
+    h.addEventListener('mousedown', e=>{
+      e.preventDefault(); e.stopPropagation();
+      const task = data_.contractors.find(c=>c.id===h.dataset.cid)?.tasks.find(t=>t.id===h.dataset.task);
+      if(!task) return;
+      const startX=e.clientX, origS=task.start;
+      const onMove = ev=>{
+        const ns = addDays(parseD(origS),Math.round((ev.clientX-startX)/dayW));
+        if(ns<=parseD(task.finish)){ task.start=fmtD(ns); renderTimeline(); }
+      };
+      const onUp = ()=>{ document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); scheduleSave(); };
+      document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
+    });
+  });
+}
+
+/* ============================================================
+   MODALS
+   ============================================================ */
+function openModal(html){
+  closeModal();
+  const b=document.createElement('div');
+  b.className='modal-back'; b.id='modalBack';
+  b.innerHTML=`<div class="modal card p-5">${html}</div>`;
+  b.addEventListener('mousedown',e=>{ if(e.target===b) closeModal(); });
+  document.body.appendChild(b);
+}
+function closeModal(){ const m=$('#modalBack'); if(m)m.remove(); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function openContractorModal(cid){
+  const c = cid ? data_.contractors.find(x=>x.id===cid) : null;
+  openModal(`<h2 style="font-size:17px;font-weight:600;margin-bottom:16px">${c?'Редактировать':'Новый'} контрагент</h2>
+    <div class="mb-3"><label class="label">Название *</label><input class="input" id="m_c_name" value="${esc(c?.name||'')}" placeholder="ООО «Ромашка»"></div>
+    <div class="mb-3"><label class="label">ИНН</label><input class="input" id="m_c_inn" value="${esc(c?.inn||'')}" placeholder="7701234567"></div>
+    <div class="mb-3"><label class="label">Контактное лицо</label><input class="input" id="m_c_contact" value="${esc(c?.contact||'')}" placeholder="Иванов И.И."></div>
+    <div class="mb-4"><label class="label">Цвет</label><div class="flex gap-2" id="m_c_colors">${DEFAULT_COLORS.map(col=>`<div onclick="pickColor(this,'${col}')" style="width:28px;height:28px;border-radius:8px;background:${col};cursor:pointer;border:2px solid ${(c?.color||DEFAULT_COLORS[0])===col?'#fff':'transparent'}"></div>`).join('')}</div><input type="hidden" id="m_c_color" value="${c?.color||DEFAULT_COLORS[0]}"></div>
+    <div class="flex gap-2 justify-end"><button class="btn" onclick="closeModal()">Отмена</button><button class="btn btn-primary" onclick="saveContractor('${cid||''}')">Сохранить</button></div>`);
+}
+function pickColor(el,col){ document.querySelectorAll('#m_c_colors > div').forEach(d=>d.style.borderColor='transparent'); el.style.borderColor='#fff'; $('#m_c_color').value=col; }
+function saveContractor(cid){
+  const name=$('#m_c_name').value.trim(); if(!name){alert('Введите название');return;}
+  const obj={name,inn:$('#m_c_inn').value.trim(),contact:$('#m_c_contact').value.trim(),color:$('#m_c_color').value};
+  if(cid){ Object.assign(data_.contractors.find(x=>x.id===cid),obj); }
+  else{ data_.contractors.push({id:uid(),...obj,tasks:[]}); }
+  closeModal(); render(); scheduleSave();
+}
+function removeContractor(cid){
+  const c=data_.contractors.find(x=>x.id===cid);
+  if(!confirm(`Удалить контрагента «${c?.name}» и все его периоды?`)) return;
+  data_.contractors = data_.contractors.filter(x=>x.id!==cid);
+  render(); scheduleSave();
+}
+
+function openTaskModal(taskId,cid){
+  const c=data_.contractors.find(x=>x.id===cid); if(!c)return;
+  const t = taskId ? c.tasks.find(x=>x.id===taskId) : null;
+  openModal(`<h2 style="font-size:17px;font-weight:600;margin-bottom:16px">${t?'Редактировать':'Новый'} период — ${esc(c.name)}</h2>
+    <div class="mb-3"><label class="label">Название *</label><input class="input" id="m_t_title" value="${esc(t?.title||'')}" placeholder="Проектирование"></div>
+    <div class="flex gap-3 mb-3"><div class="flex-1"><label class="label">Начало *</label><input type="date" class="input" id="m_t_start" value="${t?.start||data_.project.start}"></div>
+    <div class="flex-1"><label class="label">Окончание *</label><input type="date" class="input" id="m_t_finish" value="${t?.finish||data_.project.finish}"></div></div>
+    <div class="mb-4"><label class="label">Прогресс: <span id="m_t_prog_val">${t?.progress||0}</span>%</label><input type="range" id="m_t_prog" min="0" max="100" value="${t?.progress||0}" style="width:100%" oninput="document.getElementById('m_t_prog_val').textContent=this.value"></div>
+    <div class="flex gap-2 justify-end">${t?`<button class="btn btn-danger" onclick="removeTask('${taskId}','${cid}')">Удалить</button>`:''}<button class="btn" onclick="closeModal()">Отмена</button><button class="btn btn-primary" onclick="saveTask('${taskId||''}','${cid}')">Сохранить</button></div>`);
+}
+function saveTask(taskId,cid){
+  const c=data_.contractors.find(x=>x.id===cid); if(!c)return;
+  const title=$('#m_t_title').value.trim(), start=$('#m_t_start').value, finish=$('#m_t_finish').value;
+  if(!title||!start||!finish){alert('Заполните обязательные поля');return;}
+  if(parseD(finish)<parseD(start)){alert('Дата окончания раньше даты начала');return;}
+  const obj={title,start,finish,progress:parseInt($('#m_t_prog').value)||0};
+  if(taskId){ Object.assign(c.tasks.find(x=>x.id===taskId),obj); }
+  else{ c.tasks.push({id:uid(),...obj}); }
+  closeModal(); render(); scheduleSave();
+}
+function removeTask(taskId,cid){
+  if(!confirm('Удалить период?'))return;
+  const c=data_.contractors.find(x=>x.id===cid);
+  c.tasks = c.tasks.filter(t=>t.id!==taskId);
+  closeModal(); render(); scheduleSave();
+}
+
+/* ============================================================
+   EXPORT
+   ============================================================ */
+function download(f,c,t='application/json'){ const b=new Blob([c],{type:t}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=f; a.click(); }
+
+$('#btnExportJson').addEventListener('click',()=>{ download(`gantt_${fmtD(new Date())}.json`, JSON.stringify(data_,null,2)); });
+
+$('#btnExportCsv').addEventListener('click',()=>{
+  let csv = 'Контрагент;ИНН;Контакт;Период;Начало;Окончание;Прогресс %\n';
+  data_.contractors.forEach(c=>{
+    if(!c.tasks.length){ csv += `${c.name};${c.inn||''};${c.contact||''};;;;\n`; return; }
+    c.tasks.forEach(t=>{ csv += `${c.name};${c.inn||''};${c.contact||''};${t.title};${t.start};${t.finish};${t.progress||0}\n`; });
+  });
+  download(`gantt_${fmtD(new Date())}.csv`, '\ufeff'+csv, 'text/csv;charset=utf-8');
+});
+
+$('#btnReset').addEventListener('click',()=>{
+  if(!confirm('Удалить ВСЕ данные?')) return;
+  data_ = defaultData(); render(); scheduleSave();
+});
+
+$('#projectName').addEventListener('input',e=>{ data_.project.name=e.target.value; scheduleSave(); });
+$('#projectStart').addEventListener('change',e=>{ data_.project.start=e.target.value; render(); scheduleSave(); });
+$('#projectFinish').addEventListener('change',e=>{ data_.project.finish=e.target.value; render(); scheduleSave(); });
+
+$('#addContractor').addEventListener('click',()=>openContractorModal(null));
+$('#addContractor2').addEventListener('click',()=>openContractorModal(null));
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+render();
+initSupabase();
+</script>
+</body>
+</html>
