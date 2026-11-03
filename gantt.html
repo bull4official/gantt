@@ -29,8 +29,9 @@
   .tl-month{display:flex;flex-direction:column;border-right:1px solid var(--border)}
   .tl-month .m-label{padding:6px 10px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap}
   .tl-month .d-labels{display:flex;height:22px}
-  .tl-day{flex:1;font-size:9px;color:var(--muted);text-align:center;border-right:1px solid rgba(255,255,255,.04);line-height:22px}
-  .tl-day.weekend{background:rgba(255,255,255,.03)}
+    /* Заменить .tl-day на .tl-week */
+  .tl-week{flex:1;font-size:10px;color:var(--muted);text-align:center;border-right:1px solid rgba(255,255,255,.04);line-height:22px;white-space:nowrap}
+  .tl-week.weekend{background:rgba(255,255,255,.03)}
   .tl-row{position:relative;border-bottom:1px solid var(--border);height:48px}
   .tl-row.contractor-row{background:rgba(255,255,255,.02)}
   .tl-grid-line{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.05);pointer-events:none}
@@ -261,39 +262,84 @@ function renderTimeline(){
   const pStart = parseD(data_.project.start);
   const pFinish = parseD(data_.project.finish);
   const totalDays = Math.max(1, daysBetween(pStart,pFinish)+1);
-  const dayW = 22;
+  const weekW = 60; // ширина одной недели в пикселях
+  const totalWeeks = Math.ceil(totalDays / 7);
+  const totalW = totalWeeks * weekW;
 
-  // Header
-  let headHTML = '<div class="tl-head"><div style="display:flex">';
-  let cur = new Date(pStart); cur.setDate(1);
-  while(cur <= pFinish){
-    const y=cur.getFullYear(), m=cur.getMonth(), mD=daysInMonth(y,m);
-    const firstDay = (y===pStart.getFullYear()&&m===pStart.getMonth()) ? pStart.getDate() : 1;
-    const lastDay = (y===pFinish.getFullYear()&&m===pFinish.getMonth()) ? pFinish.getDate() : mD;
-    const span = lastDay - firstDay + 1;
-    const mn = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
-    let dh='';
-    for(let d=firstDay; d<=lastDay; d++){
-      const dt=new Date(y,m,d), we=dt.getDay()===0||dt.getDay()===6;
-      dh += `<div class="tl-day ${we?'weekend':''}" style="width:${dayW}px">${d}</div>`;
-    }
-    headHTML += `<div class="tl-month" style="width:${span*dayW}px;flex-shrink:0"><div class="m-label">${mn[m]} ${y}</div><div class="d-labels">${dh}</div></div>`;
-    cur.setMonth(cur.getMonth()+1); cur.setDate(1);
+  // Находим понедельник, с которого начинается первая неделя
+  function weekStart(d){
+    const r = new Date(d);
+    const day = r.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    r.setDate(r.getDate() + diff);
+    return r;
   }
+
+  // Header: месяцы + номера недель
+  let headHTML = '<div class="tl-head"><div style="display:flex">';
+  let cur = weekStart(pStart);
+  let weekIndex = 0;
+
+  while(cur <= pFinish){
+    const weekEnd = addDays(cur, 6);
+    const y = cur.getFullYear(), m = cur.getMonth();
+    const mn = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+
+    // Группируем недели по месяцам
+    let monthLabel = '';
+    let monthSpan = 0;
+    let tempCur = new Date(cur);
+    let firstMonth = tempCur.getMonth();
+
+    while(tempCur <= pFinish && tempCur.getMonth() === firstMonth){
+      monthSpan++;
+      tempCur = addDays(tempCur, 7);
+    }
+
+    // Считаем сколько недель в этом месяце
+    // (простой подход: собираем недели до смены месяца)
+    let weeks = [];
+    let temp = new Date(cur);
+    while(temp <= pFinish && temp.getMonth() === firstMonth){
+      weeks.push(new Date(temp));
+      temp = addDays(temp, 7);
+    }
+
+    if(weeks.length === 0) break;
+
+    // Заголовок месяца
+    monthLabel = `${mn[firstMonth]} ${weeks[0].getFullYear()}`;
+    headHTML += `<div class="tl-month" style="width:${weeks.length*weekW}px;flex-shrink:0">
+      <div class="m-label">${monthLabel}</div>
+      <div class="d-labels">`;
+
+    weeks.forEach((wStart, i) => {
+      const wEnd = addDays(wStart, 6);
+      const num = Math.ceil((wStart - new Date(wStart.getFullYear(),0,1)) / (7*86400000)) + 1;
+      headHTML += `<div class="tl-week" style="width:${weekW}px">Н${num}</div>`;
+    });
+
+    headHTML += `</div></div>`;
+    cur = addDays(cur, weeks.length * 7);
+    weekIndex += weeks.length;
+  }
+
   headHTML += '</div></div>';
 
-  const totalW = totalDays * dayW;
+  // Body
   let bodyHTML = `<div style="position:relative;width:${totalW}px">`;
 
-  // Grid lines
-  let gc = new Date(pStart); gc.setDate(1);
-  if(gc < pStart) gc.setMonth(gc.getMonth()+1);
+  // Grid lines на каждую неделю
+  let gc = weekStart(pStart);
+  let gi = 0;
   while(gc <= pFinish){
-    bodyHTML += `<div class="tl-grid-line month" style="left:${daysBetween(pStart,gc)*dayW}px"></div>`;
-    gc.setMonth(gc.getMonth()+1); gc.setDate(1);
+    bodyHTML += `<div class="tl-grid-line" style="left:${gi*weekW}px"></div>`;
+    gc = addDays(gc, 7);
+    gi++;
   }
 
-  if(!data_.contractors.length) bodyHTML += `<div class="empty" style="width:${totalW}px">Добавьте контрагентов</div>`;
+  if(!data_.contractors.length)
+    bodyHTML += `<div class="empty" style="width:${totalW}px">Добавьте контрагентов</div>`;
 
   data_.contractors.forEach(c=>{
     bodyHTML += `<div class="tl-row contractor-row" style="width:${totalW}px">
@@ -303,12 +349,21 @@ function renderTimeline(){
         <button class="btn" style="padding:2px 8px;font-size:10px;margin-left:8px" onclick="openTaskModal(null,'${c.id}')">+ Период</button>
       </div>
     </div>`;
-    if(!c.tasks.length) bodyHTML += `<div class="tl-row" style="width:${totalW}px"><div style="position:absolute;left:40px;top:0;height:100%;display:flex;align-items:center;color:var(--muted);font-size:12px">Нет периодов</div></div>`;
+
+    if(!c.tasks.length)
+      bodyHTML += `<div class="tl-row" style="width:${totalW}px"><div style="position:absolute;left:40px;top:0;height:100%;display:flex;align-items:center;color:var(--muted);font-size:12px">Нет периодов</div></div>`;
+
     c.tasks.forEach(t=>{
-      const s=parseD(t.start), f=parseD(t.finish);
-      const off=Math.max(0,daysBetween(pStart,s)), dur=Math.max(1,daysBetween(s,f)+1);
+      const s = parseD(t.start), f = parseD(t.finish);
+      // Позиция бара в неделях от начала шкалы
+      const ws = weekStart(pStart);
+      const startOff = daysBetween(ws, s) / 7;
+      const dur = (daysBetween(s, f) + 1) / 7;
+      const left = Math.max(0, startOff) * weekW;
+      const w = Math.max(weekW / 4, dur * weekW);
+
       bodyHTML += `<div class="tl-row" style="width:${totalW}px">
-        <div class="bar" style="left:${off*dayW}px;width:${dur*dayW}px;background:${c.color}" data-task="${t.id}" data-cid="${c.id}">
+        <div class="bar" style="left:${left}px;width:${w}px;background:${c.color}" data-task="${t.id}" data-cid="${c.id}">
           <div class="bar-fill" style="width:${t.progress||0}%;background:#fff"></div>
           <div class="bar-label">${esc(t.title)}${t.progress?` · ${t.progress}%`:''}</div>
           <div class="resize-l" data-task="${t.id}" data-cid="${c.id}"></div>
@@ -319,20 +374,18 @@ function renderTimeline(){
   });
 
   // Today line
-  const today=new Date(); today.setHours(0,0,0,0);
-  if(today>=pStart && today<=pFinish)
-    bodyHTML += `<div class="today-line" style="left:${daysBetween(pStart,today)*dayW}px"></div>`;
+  const today = new Date(); today.setHours(0,0,0,0);
+  if(today >= pStart && today <= pFinish){
+    const ws = weekStart(pStart);
+    const off = daysBetween(ws, today) / 7;
+    bodyHTML += `<div class="today-line" style="left:${off*weekW}px"></div>`;
+  }
 
   bodyHTML += '</div>';
   timelineEl.innerHTML = headHTML + bodyHTML;
-  initDragResize();
-}
-
-/* ============================================================
-   DRAG & RESIZE
-   ============================================================ */
-function initDragResize(){
-  const dayW = 22;
+  function initDragResize(){
+  const weekW = 60;
+  const dayW = weekW / 7;
 
   timelineEl.querySelectorAll('.bar').forEach(bar=>{
     bar.addEventListener('mousedown', e=>{
@@ -384,7 +437,6 @@ function initDragResize(){
     });
   });
 }
-
 /* ============================================================
    MODALS
    ============================================================ */
