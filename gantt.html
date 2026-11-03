@@ -29,7 +29,6 @@
   .tl-month{display:flex;flex-direction:column;border-right:1px solid var(--border)}
   .tl-month .m-label{padding:6px 10px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap}
   .tl-month .d-labels{display:flex;height:22px}
-    /* Заменить .tl-day на .tl-week */
   .tl-week{flex:1;font-size:10px;color:var(--muted);text-align:center;border-right:1px solid rgba(255,255,255,.04);line-height:22px;white-space:nowrap}
   .tl-week.weekend{background:rgba(255,255,255,.03)}
   .tl-row{position:relative;border-bottom:1px solid var(--border);height:48px}
@@ -112,7 +111,7 @@
 </div>
 <script>
 /* ============================================================
-   SUPABASE CONFIG — ВСТАВЬ СВОИ КЛЮЧИ
+   SUPABASE CONFIG
    ============================================================ */
 const SUPABASE_URL = 'https://yvsdgoiudliukdugiomv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2c2Rnb2l1ZGxpdWtkdWdpb212Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM2MDcxMDMsImV4cCI6MjEwOTE4MzEwM30.1QfNut__6Lh4giXj4bHyBz7jOd8uhK1B4coHDcW3gck';
@@ -143,7 +142,6 @@ async function initSupabase(){
     isOnline = true;
     setSyncStatus('online');
     render();
-    // Подписка на изменения в реальном времени
     supa.channel('gantt_changes')
       .on('postgres_changes',
         {event:'UPDATE', schema:'public', table:'gantt_data', filter:'id=eq.main'},
@@ -212,6 +210,13 @@ function fmtD(d){ return d.toISOString().slice(0,10); }
 function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
 function daysBetween(a,b){ return Math.round((b-a)/DAY); }
 function daysInMonth(y,m){ return new Date(y,m+1,0).getDate(); }
+function weekStart(d){
+  const r = new Date(d);
+  const day = r.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  r.setDate(r.getDate() + diff);
+  return r;
+}
 
 const $ = s => document.querySelector(s);
 const timelineEl = document.getElementById('timeline');
@@ -256,72 +261,42 @@ function renderSidebar(){
 }
 
 /* ============================================================
-   TIMELINE
+   TIMELINE — НЕДЕЛЬНАЯ ШКАЛА
    ============================================================ */
 function renderTimeline(){
   const pStart = parseD(data_.project.start);
   const pFinish = parseD(data_.project.finish);
   const totalDays = Math.max(1, daysBetween(pStart,pFinish)+1);
-  const weekW = 60; // ширина одной недели в пикселях
+  const weekW = 60;
   const totalWeeks = Math.ceil(totalDays / 7);
   const totalW = totalWeeks * weekW;
 
-  // Находим понедельник, с которого начинается первая неделя
-  function weekStart(d){
-    const r = new Date(d);
-    const day = r.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    r.setDate(r.getDate() + diff);
-    return r;
-  }
-
   // Header: месяцы + номера недель
   let headHTML = '<div class="tl-head"><div style="display:flex">';
+  const mn = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
   let cur = weekStart(pStart);
-  let weekIndex = 0;
 
   while(cur <= pFinish){
-    const weekEnd = addDays(cur, 6);
-    const y = cur.getFullYear(), m = cur.getMonth();
-    const mn = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
-
-    // Группируем недели по месяцам
-    let monthLabel = '';
-    let monthSpan = 0;
-    let tempCur = new Date(cur);
-    let firstMonth = tempCur.getMonth();
-
-    while(tempCur <= pFinish && tempCur.getMonth() === firstMonth){
-      monthSpan++;
-      tempCur = addDays(tempCur, 7);
-    }
-
-    // Считаем сколько недель в этом месяце
-    // (простой подход: собираем недели до смены месяца)
+    const firstMonth = cur.getMonth();
     let weeks = [];
     let temp = new Date(cur);
     while(temp <= pFinish && temp.getMonth() === firstMonth){
       weeks.push(new Date(temp));
       temp = addDays(temp, 7);
     }
-
     if(weeks.length === 0) break;
 
-    // Заголовок месяца
-    monthLabel = `${mn[firstMonth]} ${weeks[0].getFullYear()}`;
     headHTML += `<div class="tl-month" style="width:${weeks.length*weekW}px;flex-shrink:0">
-      <div class="m-label">${monthLabel}</div>
+      <div class="m-label">${mn[firstMonth]} ${weeks[0].getFullYear()}</div>
       <div class="d-labels">`;
 
-    weeks.forEach((wStart, i) => {
-      const wEnd = addDays(wStart, 6);
-      const num = Math.ceil((wStart - new Date(wStart.getFullYear(),0,1)) / (7*86400000)) + 1;
+    weeks.forEach(wStart => {
+      const num = Math.ceil((wStart - new Date(wStart.getFullYear(),0,1)) / (7*DAY)) + 1;
       headHTML += `<div class="tl-week" style="width:${weekW}px">Н${num}</div>`;
     });
 
     headHTML += `</div></div>`;
     cur = addDays(cur, weeks.length * 7);
-    weekIndex += weeks.length;
   }
 
   headHTML += '</div></div>';
@@ -329,7 +304,7 @@ function renderTimeline(){
   // Body
   let bodyHTML = `<div style="position:relative;width:${totalW}px">`;
 
-  // Grid lines на каждую неделю
+  // Grid lines
   let gc = weekStart(pStart);
   let gi = 0;
   while(gc <= pFinish){
@@ -355,7 +330,6 @@ function renderTimeline(){
 
     c.tasks.forEach(t=>{
       const s = parseD(t.start), f = parseD(t.finish);
-      // Позиция бара в неделях от начала шкалы
       const ws = weekStart(pStart);
       const startOff = daysBetween(ws, s) / 7;
       const dur = (daysBetween(s, f) + 1) / 7;
@@ -383,7 +357,13 @@ function renderTimeline(){
 
   bodyHTML += '</div>';
   timelineEl.innerHTML = headHTML + bodyHTML;
-  function initDragResize(){
+  initDragResize();
+}
+
+/* ============================================================
+   DRAG & RESIZE
+   ============================================================ */
+function initDragResize(){
   const weekW = 60;
   const dayW = weekW / 7;
 
@@ -437,6 +417,7 @@ function renderTimeline(){
     });
   });
 }
+
 /* ============================================================
    MODALS
    ============================================================ */
